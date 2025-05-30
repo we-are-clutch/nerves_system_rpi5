@@ -2,8 +2,8 @@
 set -e
 
 # This script runs the Nerves patch to ensure clutch_nerves_system_br is correctly recognized.
-# It assumes that mix deps.get, mix deps.compile, and mix compile (for Elixir code)
-# have already been run in the CI workflow, making :meck and NervesSystemRpi5.NervesPatch available.
+# It assumes that mix deps.get, mix deps.compile, nerves_bootstrap, and mix compile (for Elixir code)
+# have already been run/installed in the CI workflow, making :meck and NervesSystemRpi5.NervesPatch available.
 
 echo "Running Nerves Patch Script (execution only)..."
 
