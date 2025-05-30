@@ -17,6 +17,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: gridpoint-com/actions-nerves-system@v1
+      - name: Setup Elixir and OTP
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: ${{ env.OTP_VERSION }}
+          elixir-version: ${{ env.ELIXIR_VERSION }}
       - name: Fetch Mix Dependencies
         run: mix deps.get
       - name: Create symlink for clutch_nerves_system_br
@@ -26,7 +31,6 @@ jobs:
           if [ -d "deps/nerves_system_br" ]; then
             echo "deps/nerves_system_br already exists as a directory. Skipping symlink."
           else
-            # Ensure clutch_nerves_system_br exists before trying to get its realpath
             if [ -e "deps/clutch_nerves_system_br" ]; then
               ln -sfn $(realpath deps/clutch_nerves_system_br) deps/nerves_system_br
               echo "Symlink deps/nerves_system_br -> $(realpath deps/clutch_nerves_system_br) created."
@@ -37,23 +41,31 @@ jobs:
               exit 1
             fi
           fi
-      - name: Get Buildroot Dependencies
-        uses: ./.actions/get-br-dependencies
-        with:
-          otp-version: ${{ env.OTP_VERSION }}
-          elixir-version: ${{ env.ELIXIR_VERSION }}
-          nerves-bootstrap-version: ${{ env.NERVES_BOOTSTRAP_VERSION }}
-          push-to-download-site: false
-          download-site-url: ${{ vars.PUBLIC_S3_SITE }}
-          download-site-bucket-uri: ${{ vars.S3_BUCKET }}
-          aws-role: ${{ secrets.AWS_ROLE }}
-          aws-region: ${{ vars.AWS_REGION }}
+      - name: Get Buildroot source dependencies
+        shell: bash
+        run: |
+          echo "Running create-build.sh for source download..."
+          if [ -f "./deps/nerves_system_br/create-build.sh" ]; then
+            ./deps/nerves_system_br/create-build.sh nerves_defconfig ~/temp_nerves_system
+            echo "Changing to ~/temp_nerves_system and running make source..."
+            cd ~/temp_nerves_system
+            make source
+            echo "Buildroot source dependencies fetched."
+          else
+            echo "Error: ./deps/nerves_system_br/create-build.sh not found."
+            exit 1
+          fi
   build-system:
     needs: [get-br-dependencies]
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
       - uses: gridpoint-com/actions-nerves-system@v1
+      - name: Setup Elixir and OTP
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: ${{ env.OTP_VERSION }}
+          elixir-version: ${{ env.ELIXIR_VERSION }}
       - name: Fetch Mix Dependencies
         run: mix deps.get
       - name: Create symlink for clutch_nerves_system_br
@@ -79,12 +91,8 @@ jobs:
         run: |
           chmod +x .github/workflows/patch-nerves.sh
           .github/workflows/patch-nerves.sh
-      - name: Build nerves_system
-        uses: ./.actions/build-system
-        with:
-          otp-version: ${{ env.OTP_VERSION }}
-          elixir-version: ${{ env.ELIXIR_VERSION }}
-          nerves-bootstrap-version: ${{ env.NERVES_BOOTSTRAP_VERSION }}
+      - name: Build Nerves System Firmware
+        run: mix compile
   deploy-system:
     needs: [build-system]
     if: github.ref_type == 'tag'
