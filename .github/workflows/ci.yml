@@ -16,6 +16,11 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
+      - name: Create symlink for clutch_nerves_system_br
+        shell: bash
+        run: |
+          mkdir -p deps
+          ln -sfn $(pwd)/deps/clutch_nerves_system_br deps/nerves_system_br
       - uses: gridpoint-com/actions-nerves-system@v1
       - name: Get Buildroot Dependencies
         uses: ./.actions/get-br-dependencies
