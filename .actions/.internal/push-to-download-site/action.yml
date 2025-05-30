@@ -1,0 +1,47 @@
+name: push-to-download-site
+description: Get Buildroot dependencies and push to download site
+
+inputs:
+  download-site-url:
+    required: true
+  download-site-bucket-uri:
+    required: true
+  aws-role:
+    required: true
+  aws-region:
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Setup for Nerves
+      shell: bash
+      run: |
+        # Create a symlink so nerves_system_br points to clutch_nerves_system_br
+        mkdir -p deps
+        [ -d deps/nerves_system_br ] || ln -sf $(realpath deps/clutch_nerves_system_br) deps/nerves_system_br
+    - name: Get Buildroot dependencies
+      shell: bash
+      run: |
+        ./deps/nerves_system_br/create-build.sh nerves_defconfig ~/temp_nerves_system
+        cd ~/temp_nerves_system
+        make \
+          BR2_PRIMARY_SITE=${{ inputs.download-site-url }} \
+          BR2_BACKUP_SITE=http://sources.buildroot.net \
+          source
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ inputs.aws-role }}
+        aws-region: ${{ inputs.aws-region }}
+    - name: Push new packages to download site
+      shell: bash
+      run: |
+        aws s3 sync ~/.nerves/dl ${{ inputs.download-site-bucket-uri }} \
+          --exclude "*" \
+          --include "*.tar.*" \
+          --include "*.patch.*" \
+          --include "*.patch" \
+          --include "*-patch.*" \
+          --exclude ".lock" \
+          --exclude "*git/*" 

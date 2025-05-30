@@ -1,6 +1,10 @@
 name: CI
 
-on: [push]
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ["v*"]
 
 env:
   OTP_VERSION: 27.3.3
@@ -17,6 +21,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: gridpoint-com/actions-nerves-system@v1
+      - name: Create symlink for nerves_system_br
+        run: |
+          # Create a simple symlink - before deps are fetched
+          mkdir -p deps
+          ln -sf clutch_nerves_system_br deps/nerves_system_br || true
       - name: Get Buildroot Dependencies
         uses: ./.actions/get-br-dependencies
         with:
@@ -28,21 +37,44 @@ jobs:
           download-site-bucket-uri: ${{ vars.S3_BUCKET }}
           aws-role: ${{ secrets.AWS_ROLE }}
           aws-region: ${{ vars.AWS_REGION }}
+      - name: Patch Nerves to use clutch_nerves_system_br
+        run: |
+          # Now that dependencies are fetched, run the patch script
+          chmod +x ./.github/workflows/patch-nerves.sh
+          ./.github/workflows/patch-nerves.sh
   build-system:
     needs: [get-br-dependencies]
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
       - uses: gridpoint-com/actions-nerves-system@v1
+      - name: Create symlink for nerves_system_br
+        run: |
+          # Create a symlink for nerves_system_br
+          mkdir -p deps
+          ln -sf clutch_nerves_system_br deps/nerves_system_br || true
+      - name: Get Buildroot Dependencies
+        uses: ./.actions/get-br-dependencies
+        with:
+          otp-version: ${{ env.OTP_VERSION }}
+          elixir-version: ${{ env.ELIXIR_VERSION }}
+          nerves-bootstrap-version: ${{ env.NERVES_BOOTSTRAP_VERSION }}
+          push-to-download-site: false
+      - name: Patch Nerves to use clutch_nerves_system_br
+        run: |
+          # Now that dependencies are fetched, run the patch script
+          chmod +x ./.github/workflows/patch-nerves.sh
+          ./.github/workflows/patch-nerves.sh
       - name: Build nerves_system
         uses: ./.actions/build-system
         with:
           otp-version: ${{ env.OTP_VERSION }}
           elixir-version: ${{ env.ELIXIR_VERSION }}
           nerves-bootstrap-version: ${{ env.NERVES_BOOTSTRAP_VERSION }}
+          hex-validate: true
   deploy-system:
     needs: [build-system]
-    if: github.ref_type == 'tag'
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-22.04
     permissions:
       contents: write
