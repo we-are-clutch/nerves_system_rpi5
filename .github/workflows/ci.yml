@@ -13,6 +13,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Patch Nerves
+        run: ./.github/workflows/patch-nerves.sh
       - uses: ./.actions/setup-beam-nerves
         with:
           otp-version: 26.2.1
