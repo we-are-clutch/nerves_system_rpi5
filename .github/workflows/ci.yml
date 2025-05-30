@@ -16,6 +16,7 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
+      - uses: gridpoint-com/actions-nerves-system@v1
       - name: Create symlink for clutch_nerves_system_br
         shell: bash
         run: |
@@ -29,10 +30,11 @@ jobs:
               echo "Symlink deps/nerves_system_br -> $(realpath deps/clutch_nerves_system_br) created."
             else
               echo "Error: deps/clutch_nerves_system_br not found. Cannot create symlink."
+              echo "Listing deps directory contents:"
+              ls -la deps/ || echo "deps directory not found"
               exit 1
             fi
           fi
-      - uses: gridpoint-com/actions-nerves-system@v1
       - name: Get Buildroot Dependencies
         uses: ./.actions/get-br-dependencies
         with:
@@ -50,6 +52,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: gridpoint-com/actions-nerves-system@v1
+      - name: Create symlink for clutch_nerves_system_br
+        shell: bash
+        run: |
+          mkdir -p deps
+          if [ -d "deps/nerves_system_br" ]; then
+            echo "deps/nerves_system_br already exists as a directory. Skipping symlink."
+          else
+            # Ensure clutch_nerves_system_br exists before trying to get its realpath
+            if [ -e "deps/clutch_nerves_system_br" ]; then
+              ln -sfn $(realpath deps/clutch_nerves_system_br) deps/nerves_system_br
+              echo "Symlink deps/nerves_system_br -> $(realpath deps/clutch_nerves_system_br) created."
+            else
+              echo "Error: deps/clutch_nerves_system_br not found. Cannot create symlink."
+              echo "Listing deps directory contents:"
+              ls -la deps/ || echo "deps directory not found"
+              exit 1
+            fi
+          fi
       - name: Run Nerves Patch Script
         shell: bash
         run: |
