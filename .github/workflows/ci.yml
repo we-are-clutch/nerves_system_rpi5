@@ -72,13 +72,18 @@ jobs:
       - name: Fetch Mix Dependencies
         run: mix deps.get
       - name: Compile Meck (dependency for patch)
+        env:
+          MIX_ENV: "prod"
         run: mix deps.compile meck --force
       - name: Compile Project Elixir Code (including patch module)
-        # This compile should make NervesSystemRpi5.NervesPatch available for mix run.
-        # It will skip :nerves_package due to the ENV var.
         env:
+          MIX_ENV: "prod"
           SKIP_NERVES_PACKAGE: "true"
-        run: mix compile --no-deps-check
+        shell: bash # Ensure bash is used for export to work as expected across lines
+        run: |
+          export SKIP_NERVES_PACKAGE="true" # Redundant due to env but ensures shell sees it for echo
+          echo "MIX_ENV is $MIX_ENV, SKIP_NERVES_PACKAGE is set to: $SKIP_NERVES_PACKAGE"
+          mix compile --no-deps-check
       - name: Create symlink for clutch_nerves_system_br
         shell: bash
         run: |
@@ -102,10 +107,14 @@ jobs:
           chmod +x .github/workflows/patch-nerves.sh
           .github/workflows/patch-nerves.sh
       - name: Build Nerves System Firmware (Patched)
-        # Ensure SKIP_NERVES_PACKAGE is not set or is false for the final Nerves compile
         env:
+          MIX_ENV: "prod"
           SKIP_NERVES_PACKAGE: "false"
-        run: mix compile
+        shell: bash # Ensure bash is used for export to work as expected across lines
+        run: |
+          export SKIP_NERVES_PACKAGE="false" # Redundant due to env
+          echo "MIX_ENV is $MIX_ENV, SKIP_NERVES_PACKAGE is set to: $SKIP_NERVES_PACKAGE"
+          mix compile
   deploy-system:
     needs: [build-system]
     if: github.ref_type == 'tag'

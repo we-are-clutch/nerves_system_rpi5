@@ -2,15 +2,17 @@
 set -e
 
 # This script runs the Nerves patch to ensure clutch_nerves_system_br is correctly recognized.
-# It assumes that mix deps.get, mix deps.compile, nerves_bootstrap, and mix compile (for Elixir code)
-# have already been run/installed in the CI workflow, making :meck and NervesSystemRpi5.NervesPatch available.
+# It assumes that mix deps.get, and relevant compilations for the patch module and meck
+# have already been run/installed in the CI workflow.
 
-echo "Running Nerves Patch Script (execution only)..."
+echo "Running Nerves Patch Script (mix run -e, MIX_TARGET=host attempt)..."
 
 MIX_ENV="${MIX_ENV:-prod}"
 echo "MIX_ENV is $MIX_ENV"
 
-echo "Executing Nerves patch: NervesSystemRpi5.NervesPatch.run()"
-mix run --no-deps-check --no-compile -e "NervesSystemRpi5.NervesPatch.run()"
+# Ensure SKIP_NERVES_PACKAGE is not true for this specific command.
+# Explicitly set MIX_TARGET=host for this patching step.
+echo "Executing Nerves patch logic: NervesSystemRpi5.PatchLogic.apply() (MIX_TARGET=host)"
+(unset SKIP_NERVES_PACKAGE; export MIX_TARGET=host; mix run --no-deps-check --no-compile -e "NervesSystemRpi5.PatchLogic.apply()")
 
-echo "Nerves Patch Script completed." 
+echo "Nerves Patch Script (mix run -e, MIX_TARGET=host attempt) completed." 

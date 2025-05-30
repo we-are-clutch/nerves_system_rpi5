@@ -72,7 +72,7 @@ defmodule NervesSystemRpi5.MixProject do
       {:nerves_toolchain_aarch64_nerves_linux_gnu, "~> 13.2.0", runtime: false},
       {:nerves_system_linter, "~> 0.4", only: [:dev, :test], runtime: false},
       {:ex_doc, "~> 0.22", only: :docs, runtime: false},
-      {:meck, "~> 0.9", only: [:dev, :test], runtime: false}
+      {:meck, "~> 0.9", runtime: false}
     ]
   end
 
@@ -147,6 +147,7 @@ defmodule NervesSystemRpi5.MixProject do
 
   defp compilers do
     default_compilers = Mix.compilers()
+    # IO.puts("[DEBUG] In compilers/0 function. Hardcoding skip of :nerves_package for this test.")
     # Skip :nerves_package if SKIP_NERVES_PACKAGE is true, typically for CI pre-patch compile
     if System.get_env("SKIP_NERVES_PACKAGE") == "true" do
       IO.puts("Skipping :nerves_package compiler due to SKIP_NERVES_PACKAGE=true")
@@ -154,5 +155,6 @@ defmodule NervesSystemRpi5.MixProject do
     else
       default_compilers ++ [:nerves_package]
     end
+    # default_compilers # <--- REMOVE HARDCODED SKIP
   end
 end
