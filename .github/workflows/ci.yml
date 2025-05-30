@@ -68,6 +68,12 @@ jobs:
           elixir-version: ${{ env.ELIXIR_VERSION }}
       - name: Fetch Mix Dependencies
         run: mix deps.get
+      - name: Compile Meck (dependency for patch)
+        run: mix deps.compile meck --force
+      - name: Compile Project Elixir Code (including patch module)
+        # This compile should make NervesSystemRpi5.NervesPatch available for mix run.
+        # We hope this doesn't trigger the failing Nerves package compilation yet.
+        run: mix compile --no-deps-check
       - name: Create symlink for clutch_nerves_system_br
         shell: bash
         run: |
@@ -75,7 +81,6 @@ jobs:
           if [ -d "deps/nerves_system_br" ]; then
             echo "deps/nerves_system_br already exists as a directory. Skipping symlink."
           else
-            # Ensure clutch_nerves_system_br exists before trying to get its realpath
             if [ -e "deps/clutch_nerves_system_br" ]; then
               ln -sfn $(realpath deps/clutch_nerves_system_br) deps/nerves_system_br
               echo "Symlink deps/nerves_system_br -> $(realpath deps/clutch_nerves_system_br) created."
@@ -91,7 +96,7 @@ jobs:
         run: |
           chmod +x .github/workflows/patch-nerves.sh
           .github/workflows/patch-nerves.sh
-      - name: Build Nerves System Firmware
+      - name: Build Nerves System Firmware (Patched)
         run: mix compile
   deploy-system:
     needs: [build-system]
