@@ -75,7 +75,9 @@ jobs:
         run: mix deps.compile meck --force
       - name: Compile Project Elixir Code (including patch module)
         # This compile should make NervesSystemRpi5.NervesPatch available for mix run.
-        # We hope this doesn't trigger the failing Nerves package compilation yet.
+        # It will skip :nerves_package due to the ENV var.
+        env:
+          SKIP_NERVES_PACKAGE: "true"
         run: mix compile --no-deps-check
       - name: Create symlink for clutch_nerves_system_br
         shell: bash
@@ -100,6 +102,9 @@ jobs:
           chmod +x .github/workflows/patch-nerves.sh
           .github/workflows/patch-nerves.sh
       - name: Build Nerves System Firmware (Patched)
+        # Ensure SKIP_NERVES_PACKAGE is not set or is false for the final Nerves compile
+        env:
+          SKIP_NERVES_PACKAGE: "false"
         run: mix compile
   deploy-system:
     needs: [build-system]

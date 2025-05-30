@@ -14,7 +14,7 @@ defmodule NervesSystemRpi5.MixProject do
       version: @version,
       # Because we're using OTP 27, we need to enforce Elixir 1.17 or later.
       elixir: "~> 1.17",
-      compilers: Mix.compilers() ++ [:nerves_package],
+      compilers: compilers(),
       nerves_package: nerves_package(),
       description: description(),
       package: package(),
@@ -142,6 +142,17 @@ defmodule NervesSystemRpi5.MixProject do
       apply(Mix, :target, [:target])
     else
       System.put_env("MIX_TARGET", "target")
+    end
+  end
+
+  defp compilers do
+    default_compilers = Mix.compilers()
+    # Skip :nerves_package if SKIP_NERVES_PACKAGE is true, typically for CI pre-patch compile
+    if System.get_env("SKIP_NERVES_PACKAGE") == "true" do
+      IO.puts("Skipping :nerves_package compiler due to SKIP_NERVES_PACKAGE=true")
+      default_compilers
+    else
+      default_compilers ++ [:nerves_package]
     end
   end
 end
