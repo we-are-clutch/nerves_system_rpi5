@@ -1,0 +1,282 @@
+name: get-br-dependencies
+description: Get Buildroot dependencies
+
+inputs:
+  otp-version:
+    required: false
+    description: Set OTP version to use
+  elixir-version:
+    required: false
+    description: Set Elixir version to use
+  nerves-bootstrap-version:
+    required: false
+    description: Set nerves bootstrap version to use
+  push-to-download-site:
+    required: false
+    description: Push Buildroot packages to aws s3 bucket
+    default: 'false'
+  download-site-url:
+    required: false # required if `push-to-download-site` is true
+    description: public URL for downloading packages uploaded to the aws s3 bucket
+    default: 'http://dl.nerves-project.org'
+  download-site-bucket-uri:
+    required: false # required if `push-to-download-site` is true
+    description: aws s3 bucket uri for uploading buildroot packages
+  aws-role:
+    required: false # required if `push-to-download-site` is true
+  aws-region:
+    required: false # required if `push-to-download-site` is true
+
+runs:
+  using: composite
+  steps:
+    - name: Create build.sh script
+      shell: bash
+      run: |
+        cat > create-build.sh << 'EOF'
+        #!/bin/bash
+
+        set -e
+
+        # Create a build directory for the system
+        NERVES_BR_DL_DIR=$HOME/.nerves/dl
+
+        if [ -n "$GITHUB_WORKSPACE" ]; then
+          BASE_DIR=$(pwd)/o
+        else
+          BASE_DIR=$(pwd)/../o
+        fi
+
+        # Determine the name of the system from mix.exs
+        # This is a simple grep and won't work if there's anything tricky
+        # in the mix.exs file.
+        NERVES_SYSTEM=$(grep app: mix.exs | sed -e 's/.*app: ://' -e 's/].*//' -e 's/[ ,]//g')
+        if [ -z "$NERVES_SYSTEM" ]; then
+          echo "Can't figure out the Nerves system name from mix.exs."
+          echo "The app: line must be of the form: app: :nerves_system_xyz,"
+          exit 1
+        fi
+
+        echo "Nerves system name: $NERVES_SYSTEM"
+
+        # Check that we haven't already built this version of the system
+        if [ -e "_build/*/nerves/system/$NERVES_SYSTEM" ]; then
+          echo "_build/*/nerves/system/$NERVES_SYSTEM exists. Call \"mix clean\" to rebuild."
+          exit 1
+        fi
+
+        NERVES_DEFCONFIG=$(basename "$1")
+        source "${BASH_SOURCE%/*}/deps/nerves_system_br/scripts/nerves-env-helper.sh"
+        
+        # Apply patching logic for clutch_nerves_system_br
+        bash .github/workflows/patch-nerves.sh
+        
+        NERVES_SYSTEM=$NERVES_SYSTEM NERVES_DEFCONFIG=$NERVES_DEFCONFIG NERVES_BR_DL_DIR=$NERVES_BR_DL_DIR \
+          nerves_system_br/scripts/nerves-env-helper.sh $BASE_DIR/buildroot \
+          nerves_defconfig "$2"
+
+        if [ $# -lt 2 ]; then
+          echo "$0 <defconfig> [build directory]"
+          exit 1
+        fi
+
+        NERVES_DEFCONFIG=$1
+        NERVES_DEFCONFIG_DIR=$(dirname "$1")
+        BUILD_DIR=$2
+
+        DEFCONFIG=$NERVES_DEFCONFIG
+        
+        # If a base directory is specified, make sure it exists and use it
+        [ -n "$BASE_DIR" ] && mkdir -p "$BASE_DIR"
+
+        # Create the build directory if it doesn't already exist
+        mkdir -p "$BUILD_DIR"
+
+        # Normalize paths that might be on other OSes
+        NERVES_DEFCONFIG=$(pwd)/$(realpath --relative-to=. "$NERVES_DEFCONFIG")
+        NERVES_DEFCONFIG_DIR=$(dirname "$NERVES_DEFCONFIG")
+        BUILD_DIR=$(realpath "$BUILD_DIR")
+
+        if [ ! -f "$NERVES_DEFCONFIG" ]; then
+          echo "ERROR: Can't find $NERVES_DEFCONFIG. Please check that it exists."
+          exit 1
+        fi
+
+        # Check that the path to the defconfig doesn't have spaces. This won't work.
+        case "$NERVES_DEFCONFIG_DIR" in
+          *[[:space:]]*)
+            echo "ERROR: Can't use '$NERVES_DEFCONFIG_DIR' as the defconfig directory"
+            echo "due to the space in the directory name."
+            exit 1
+            ;;
+          *)
+            ;;
+        esac
+
+        # Check that the path to the build directory doesn't have spaces. This won't work.
+        case "$BUILD_DIR" in
+          *[[:space:]]*)
+            echo "ERROR: Can't use '$BUILD_DIR' as the build directory"
+            echo "due to the space in the directory name."
+            exit 1
+            ;;
+          *)
+            ;;
+        esac
+
+        # Clean up the output directory if it exists
+        if [ -e "$BUILD_DIR" ]; then
+          echo "Cleaning up previously used build directory..."
+          rm -fr "$BUILD_DIR"
+        fi
+
+        # Create the build directory
+        mkdir -p "$BUILD_DIR"
+
+        # Setup nerves-env
+        if grep -q NERVES_SYSTEM "$NERVES_DEFCONFIG"; then
+          # Nerves system
+          NERVES_SYSTEM=$(grep BR2_NERVES_SYSTEM_NAME "$NERVES_DEFCONFIG" | sed -e 's/BR2_NERVES_SYSTEM_NAME="\(.*\)"/\1/')
+          if [ -z "$NERVES_SYSTEM" ]; then
+            echo "Could not find a NERVES_SYSTEM setting in '$NERVES_DEFCONFIG'."
+            echo
+            echo "Assigning NERVES_SYSTEM based on directory name."
+            NERVES_SYSTEM=$(basename "$(pwd)")
+          fi
+        else
+          # Not a Nerves system, so we need to specify a NERVES_SYSTEM
+          NERVES_SYSTEM=$(basename "$(pwd)")
+        fi
+
+        # Run the create-build.sh script from the system br
+        #   ./deps/nerves_system_br/create-build.sh "$NERVES_DEFCONFIG" "$BUILD_DIR"
+        # Rather than run this directly, we'll do what it does. We need to
+        # also override the BR2_DL_DIR environment variable
+        DEFCONFIG=$NERVES_DEFCONFIG
+
+        # Source nerves_system_br.mk for the current version of Buildroot
+        # to use
+        if [ -e nerves_system_br.mk ]; then
+          . ./nerves_system_br.mk
+        elif [ -e nerves_system_br.exs ]; then
+          NERVES_BR_VERSION=$(grep "buildroot:" nerves_system_br.exs | cut -d: -f2 | xargs)
+        else
+          echo "Could not determine nerves_system_br version!"
+          exit 1
+        fi
+
+        # Now find it in the deps directory
+        NERVES_SYSTEM_BR_VERSION=$(find deps -name buildroot-$NERVES_BR_VERSION 2>/dev/null | head -n 1)
+        if [ -e "$NERVES_SYSTEM_BR_VERSION" ]; then
+          NERVES_SYSTEM_BR_TARBALL=$NERVES_SYSTEM_BR_VERSION
+        else
+          NERVES_SYSTEM_BR_TARBALL=deps/nerves_system_br/buildroot-$NERVES_BR_VERSION.tar.xz
+        fi
+
+        if [ ! -e "$NERVES_SYSTEM_BR_TARBALL" ]; then
+          echo "Can't find buildroot-$NERVES_BR_VERSION.tar.xz in deps/nerves_system_br."
+          echo
+          echo "This should be created by running: mix deps.get"
+          exit 1
+        fi
+
+        # Location to download files to so that they don't need
+        # to be redownloaded when working a lot with buildroot
+        #
+        # NOTE: If you are a heavy nerves user and you change this,
+        #       you will want to update your path to buildroot-cache
+        #       in these files as well:
+        #
+        #          ~/.nerves/cache/buildroot-cache
+        #          $NERVES_DEFCONFIG
+        #
+        [ -z "$NERVES_BR_DL_DIR" ] && NERVES_BR_DL_DIR=$HOME/.nerves/dl
+
+        mkdir -p "$HOME/.nerves"
+        mkdir -p "$NERVES_BR_DL_DIR"
+
+        # Buildroot downloads a lot of stuff and sometimes it fails over network blips.
+        # Pull in a configuration file from the system configuration to help deal with this.
+        # Normally these settings get calculated on the fly by scripts/nerves-env-helper.sh
+        # so we need to copy some of the code from there.
+        if [ -e "$NERVES_DEFCONFIG_DIR/nerves_env.exs" ]; then
+          NERVES_ENV_OVERRIDE=1
+          . "$NERVES_DEFCONFIG_DIR/nerves_env.exs"
+        fi
+
+        # Create the build directory and generate the br configuration file
+        # shellcheck disable=SC2174
+        mkdir -p -m 755 "$BUILD_DIR/patches"
+        mkdir -p "$BUILD_DIR/source"
+
+        # Prepare for BR2_EXTERNAL
+        rm -fr "$BUILD_DIR/buildroot"
+        mkdir -p "$BUILD_DIR/buildroot"
+
+        tar xf "$NERVES_SYSTEM_BR_TARBALL" -C "$BUILD_DIR/buildroot" --strip-components=1
+
+        # Apply patches to Buildroot to enable features that we need
+        for p in "$NERVES_DEFCONFIG_DIR"/buildroot-patches/*.patch; do
+          if [ -e "$p" ]; then
+            echo "Applying $(basename "$p") to buildroot"
+            patch -p1 -b -d "$BUILD_DIR/buildroot" < "$p"
+          fi
+        done
+
+        # Disable access to the Buildroot download directory from builds
+        echo "# Make downloaded files private, since they may contain private keys" > "$BUILD_DIR/buildroot/.gitignore"
+        echo "/dl" >> "$BUILD_DIR/buildroot/.gitignore"
+        chmod 700 "$BUILD_DIR/buildroot"
+
+        # Copy the nerves_defconfig to the output location
+        # and append BR2_DL_DIR to it
+        cp "$NERVES_DEFCONFIG" "$BUILD_DIR/buildroot/configs/nerves_defconfig_org"
+        echo "BR2_DL_DIR=\"$NERVES_BR_DL_DIR\"" >> "$BUILD_DIR/buildroot/configs/nerves_defconfig_org"
+
+        # Configure the build directory - finally!
+        make O="$BUILD_DIR/buildroot" BR2_EXTERNAL=.. -C "$BUILD_DIR/buildroot" nerves_defconfig_org
+
+        echo
+        echo "------------------------------------------------------------"
+        echo
+        echo "Build directory successfully created."
+        echo
+        echo "Configuration: $NERVES_DEFCONFIG"
+        echo
+        echo "Next, do the following:"
+        echo "   1. cd $BUILD_DIR"
+        echo "   2. make"
+        echo
+        echo "For additional options, run 'make help' in the build directory."
+        echo
+        echo "IMPORTANT: If you update nerves_system_br, you should rerun this script."
+        EOF
+        
+        chmod +x create-build.sh
+    - uses: ./.actions/.internal/setup-beam-nerves
+      if: inputs.otp-version != ''
+      with:
+        otp-version: ${{ inputs.otp-version }}
+        elixir-version: ${{ inputs.elixir-version }}
+        nerves-bootstrap-version: ${{ inputs.nerves-bootstrap-version }}
+    - uses: ./.actions/.internal/restore-nerves-downloads
+    - uses: ./.actions/.internal/mix-deps-get
+    - name: Get Buildroot dependencies
+      if: inputs.push-to-download-site != 'true'
+      shell: bash
+      run: |
+        # Patch Nerves to work with clutch_nerves_system_br
+        bash .github/workflows/patch-nerves.sh
+        
+        # Get dependencies
+        ./create-build.sh nerves_defconfig ~/temp_nerves_system
+        cd ~/temp_nerves_system
+        make source
+    - name: Get Buildroot dependencies on push-to-download-site
+      if: inputs.push-to-download-site == 'true'
+      uses: ./.actions/.internal/push-to-download-site
+      with:
+        download-site-url: ${{ inputs.download-site-url }}
+        download-site-bucket-uri: ${{ inputs.download-site-bucket-uri }}
+        aws-role: ${{ inputs.aws-role }}
+        aws-region: ${{ inputs.aws-region }} 

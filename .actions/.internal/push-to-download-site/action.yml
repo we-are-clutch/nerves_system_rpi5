@@ -1,0 +1,51 @@
+name: push-to-download-site
+description: Get Buildroot dependencies and push to download site
+
+inputs:
+  download-site-url:
+    required: true
+    description: public URL for downloading packages uploaded to the aws s3 bucket
+  download-site-bucket-uri:
+    required: true
+    description: aws s3 bucket uri for uploading buildroot packages
+  aws-role:
+    required: false
+    description: aws role for authentication
+  aws-region:
+    required: false
+    description: aws region for the s3 bucket
+
+runs:
+  using: composite
+  steps:
+    - name: Configure AWS credentials
+      if: inputs.aws-role != ''
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ inputs.aws-role }}
+        aws-region: ${{ inputs.aws-region }}
+    - name: Get Buildroot dependencies
+      shell: bash
+      run: |
+        ./deps/nerves_system_br/create-build.sh nerves_defconfig ~/temp_nerves_system
+        cd ~/temp_nerves_system
+        make source
+        cd package
+        make package-dirclean
+        make
+    - name: Upload to aws s3 bucket
+      shell: bash
+      run: |
+        # Push buildroot packages to aws s3 bucket
+        # Find missing packages and push them to the download site
+        script/scrub-cache.sh --download-site ${{ inputs.download-site-url }}
+        
+        if [ -n "$(ls -A ~/.nerves/dl/scrub)" ]; then
+          echo "New packages found in the scrub directory"
+          cd ~/.nerves/dl/scrub
+          
+          # Copy the files to the bucket
+          aws s3 cp --recursive . ${{ inputs.download-site-bucket-uri }}
+        else
+          echo "No new packages found in the scrub directory"
+        fi 

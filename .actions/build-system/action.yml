@@ -1,0 +1,40 @@
+name: build-system
+description: Build a Nerves system package
+
+inputs:
+  otp-version:
+    required: true
+    description: Set OTP version to use
+  elixir-version:
+    required: true
+    description: Set Elixir version to use
+  nerves-bootstrap-version:
+    required: true
+    description: Set nerves bootstrap version to use
+
+runs:
+  using: composite
+  steps:
+    - uses: ./.actions/.internal/setup-beam-nerves
+      with:
+        otp-version: ${{ inputs.otp-version }}
+        elixir-version: ${{ inputs.elixir-version }}
+        nerves-bootstrap-version: ${{ inputs.nerves-bootstrap-version }}
+    - uses: ./.actions/.internal/restore-nerves-downloads
+    - uses: ./.actions/.internal/mix-deps-get
+    - uses: ./.actions/.internal/cache-buildroot-ccache
+    - name: Build the system
+      shell: bash
+      run: |
+        # Patch Nerves to work with clutch_nerves_system_br
+        bash .github/workflows/patch-nerves.sh
+        
+        # Build the system
+        echo "Building system..."
+        mix compile
+        mix nerves.artifact
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: nerves_system_rpi5
+        path: _build/*/nerves_system_rpi5-*.tar.gz 

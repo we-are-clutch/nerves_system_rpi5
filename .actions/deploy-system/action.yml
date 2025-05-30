@@ -1,0 +1,31 @@
+name: deploy-system
+description: Deploy a Nerves system package
+
+inputs:
+  github-token:
+    required: true
+    description: GitHub token for creating releases
+  draft:
+    required: false
+    description: Whether to create a draft release
+    default: 'false'
+  prerelease:
+    required: false
+    description: Whether to create a prerelease
+    default: 'false'
+
+runs:
+  using: composite
+  steps:
+    - name: Download artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: nerves_system_rpi5
+        path: artifacts
+    - name: Create release
+      uses: softprops/action-gh-release@v2
+      with:
+        files: artifacts/nerves_system_rpi5-*.tar.gz
+        draft: ${{ inputs.draft }}
+        prerelease: ${{ inputs.prerelease }}
+        token: ${{ inputs.github-token }} 

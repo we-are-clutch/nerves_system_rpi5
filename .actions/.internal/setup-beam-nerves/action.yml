@@ -1,0 +1,55 @@
+name: setup-beam-nerves
+description: Setup Erlang, Elixir, and Nerves for CI
+
+inputs:
+  otp-version:
+    required: true
+    description: Set OTP version to use
+  elixir-version:
+    required: true
+    description: Set Elixir version to use
+  nerves-bootstrap-version:
+    required: true
+    description: Set nerves bootstrap version to use
+  hex-validate:
+    required: false
+    type: boolean
+    default: true
+  save-dl-cache:
+    required: false
+    description: Cache the packages downloaded by Buildroot (`~/.nerves/dl`)
+    type: boolean
+    default: true
+  push-to-download-site:
+    required: false
+    description: Push Buildroot packages to aws s3 bucket
+    type: boolean
+    default: false
+  download-site-url:
+    required: false # required if `push-to-download-site` is true
+    description: public URL for downloading packages uploaded to the aws s3 bucket
+    default: 'http://dl.nerves-project.org'
+  download-site-bucket-uri:
+    required: false # required if `push-to-download-site` is true
+    description: aws s3 bucket uri for uploading buildroot packages
+  aws-role:
+    required: false # required if `push-to-download-site` is true
+  aws-region:
+    required: false # required if `push-to-download-site` is true
+
+runs:
+  using: composite
+  steps:
+    - uses: erlef/setup-beam@v1
+      with:
+        otp-version: ${{ inputs.otp-version }}
+        elixir-version: ${{ inputs.elixir-version }}
+    - name: Install hex and rebar
+      shell: bash
+      run: |
+        mix local.hex --force
+        mix local.rebar --force
+    - name: Install nerves_bootstrap
+      shell: bash
+      run: |
+        mix archive.install hex nerves_bootstrap ${{ inputs.nerves-bootstrap-version }} --force 
