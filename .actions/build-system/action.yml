@@ -44,6 +44,9 @@ runs:
           export BR2_CCACHE_DIR=~/.buildroot-ccache
           export BR2_CCACHE_INITIAL_SETUP="${{ inputs.ccache-initial-setup }}"
         fi
+        # Build optimizations - defconfig now handles BR2_JLEVEL
+        export BR2_DL_DIR=~/.nerves/dl  # Ensure download cache is used
+        echo "Building with $(nproc) CPU cores available"
         mix compile
     - name: Did I really build
       shell: bash
